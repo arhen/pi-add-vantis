@@ -221,18 +221,21 @@ export default async function (pi: ExtensionAPI) {
 	};
 	registerProvider();
 
-	const statusText = () =>
-		[
-			zdrOn ? "ZDR" : "",
-			lastBalanceFetched ? `$${lastBalanceUsd.toFixed(2)}` : "",
-		]
-			.filter(Boolean)
-			.join("·");
+	const statusText = () => (zdrOn ? "ZDR" : ""); // balance removed: redundant with pi's built-in session cost
+
+	// Footer status only while a vantis model is active.
+	const syncStatus = (ctx: { ui: { setStatus(k: string, v: string | undefined): void } }, model?: { provider?: string }) => {
+		ctx.ui.setStatus("vantis", model?.provider === "vantis" ? statusText() || undefined : undefined);
+	};
 
 	pi.on("session_start", async (_event, ctx) => {
-		ctx.ui.setStatus("vantis", statusText());
+		syncStatus(ctx, ctx.model);
 		// Catalog endpoint is public — always refresh (offline-safe via stored fallback).
 		void ctx.modelRegistry.refresh({ providers: ["vantis"] }).catch(() => {});
+	});
+
+	pi.on("model_select", (event, ctx) => {
+		syncStatus(ctx, event.model);
 	});
 
 	pi.registerCommand("vantis", {
@@ -251,7 +254,7 @@ export default async function (pi: ExtensionAPI) {
 						providers: ["vantis"],
 						force: true,
 					});
-					ctx.ui.setStatus("vantis", statusText() || undefined);
+					syncStatus(ctx, ctx.model);
 					ctx.ui.notify(
 						`Vantis ZDR ${zdrOn ? "ON" : "off"} — ${zdrOn ? "requests send X-ZDR: required; honored responses carry X-Vantis-ZDR: honored, calls fail if ZDR capacity unavailable" : "requests may use non-ZDR routes"}`,
 						zdrOn ? "warning" : "info",
@@ -327,8 +330,8 @@ export default async function (pi: ExtensionAPI) {
 						lastBalanceUsd = (b.balance_usd as number) ?? lastBalanceUsd;
 						lastBalanceFetched = Date.now();
 						await saveState();
-						ctx.ui.setStatus("vantis", statusText());
-						const parts = Object.entries(b)
+						syncStatus(ctx, ctx.model);
+					ctx.ui.notify(						const parts = Object.entries(b)
 							.filter(([, v]) => typeof v !== "object" && v !== null)
 							.map(([k, v]) => `${k}=${v}`);
 						ctx.ui.notify(`Vantis balance: ${parts.join(" · ")}`, "info");
