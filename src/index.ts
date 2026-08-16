@@ -331,7 +331,7 @@ export default async function (pi: ExtensionAPI) {
 						lastBalanceFetched = Date.now();
 						await saveState();
 						syncStatus(ctx, ctx.model);
-					ctx.ui.notify(						const parts = Object.entries(b)
+						const parts = Object.entries(b)
 							.filter(([, v]) => typeof v !== "object" && v !== null)
 							.map(([k, v]) => `${k}=${v}`);
 						ctx.ui.notify(`Vantis balance: ${parts.join(" · ")}`, "info");
