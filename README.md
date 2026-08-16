@@ -1,6 +1,6 @@
-# @arhen/pi-vantis
+# @arhen/add-pi-vantis
 
-[![npm version](https://img.shields.io/npm/v/@arhen%2Fpi-vantis?color=cb3837&logo=npm)](https://www.npmjs.com/package/@arhen/pi-vantis)
+[![npm version](https://img.shields.io/npm/v/@arhen%2Fadd-pi-vantis?color=cb3837&logo=npm)](https://www.npmjs.com/package/@arhen/add-pi-vantis)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 Vantis Cards provider for pi. Live model catalog, Zero Data Retention toggle, balance check.
@@ -11,7 +11,7 @@ Vantis Cards provider for pi. Live model catalog, Zero Data Retention toggle, ba
 ## Install
 
 ```sh
-pi install npm:@arhen/pi-vantis
+pi install npm:@arhen/add-pi-vantis
 ```
 
 ## License
