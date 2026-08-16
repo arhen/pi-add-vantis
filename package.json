@@ -1,8 +1,8 @@
 {
-  "name": "@arhen/add-pi-vantis",
+  "name": "@arhen/pi-add-vantis",
   "version": "1.0.0",
   "type": "module",
-  "description": "Additional pi extension: vantis.",
+  "description": "pi extension: vantis.",
   "license": "MIT",
   "main": "./src/index.ts",
   "files": [
