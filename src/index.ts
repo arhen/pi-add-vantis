@@ -103,13 +103,22 @@ async function saveState() {
 	);
 }
 
+// ponytail: vantis routes its catalog id `deepseek-v4-flash-0731` to a flaky
+// backend path (dashboard: upstream_error, 0 tokens at real context sizes),
+// while the unlisted alias `deepseek-v4-flash` hits a healthy path and succeeds
+// at the same size. Rewrite the wire id; delete this map when vantis fixes
+// `-0731` routing.
+const WIRE_ALIAS: Record<string, string> = {
+	"deepseek-v4-flash-0731": "deepseek-v4-flash",
+};
+
 function mapModel(
 	m: VantisCatalogModel,
 	p: VantisPricing | undefined,
 ): MappedModel {
 	const family = p?.family ?? m.family;
 	return {
-		id: m.id,
+		id: WIRE_ALIAS[m.id] ?? m.id,
 		name: p?.label ?? m.id,
 		api: "openai-completions",
 		provider: "vantis",
@@ -280,9 +289,7 @@ export default async function (pi: ExtensionAPI) {
 					];
 					for (const m of models) {
 						const family =
-							m.id === "deepseek-v4-flash-0731"
-								? "open"
-								: "frontier(allowlist)";
+							m.id === "deepseek-v4-flash" ? "open" : "frontier(allowlist)";
 						lines.push(
 							`${m.id}  ctx=${fmtTokens(m.contextWindow)}  out=${fmtTokens(m.maxTokens)}  ` +
 								`reasoning=${m.reasoning ? "on" : "off"}  ${family}`,
