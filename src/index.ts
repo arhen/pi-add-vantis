@@ -103,22 +103,13 @@ async function saveState() {
 	);
 }
 
-// ponytail: vantis routes its catalog id `deepseek-v4-flash-0731` to a flaky
-// backend path (dashboard: upstream_error, 0 tokens at real context sizes),
-// while the unlisted alias `deepseek-v4-flash` hits a healthy path and succeeds
-// at the same size. Rewrite the wire id; delete this map when vantis fixes
-// `-0731` routing.
-const WIRE_ALIAS: Record<string, string> = {
-	"deepseek-v4-flash-0731": "deepseek-v4-flash",
-};
-
 function mapModel(
 	m: VantisCatalogModel,
 	p: VantisPricing | undefined,
 ): MappedModel {
 	const family = p?.family ?? m.family;
 	return {
-		id: WIRE_ALIAS[m.id] ?? m.id,
+		id: m.id,
 		name: p?.label ?? m.id,
 		api: "openai-completions",
 		provider: "vantis",
@@ -247,6 +238,43 @@ export default async function (pi: ExtensionAPI) {
 		syncStatus(ctx, event.model);
 	});
 
+	type Ctx = {
+		modelRegistry: {
+			refresh(opts: { providers: string[]; force?: boolean }): Promise<unknown>;
+		};
+		ui: { notify(msg: string, kind?: string): void };
+		model?: { provider?: string };
+	};
+	const toggleZdr = async (
+		ctx: Ctx,
+		next?: boolean,
+		requireVantis = false,
+	) => {
+		if (requireVantis && ctx.model?.provider !== "vantis") {
+			ctx.ui.notify(
+				"Vantis ZDR: not on a vantis model (ctrl+shift+z applies to vantis only)",
+				"warning",
+			);
+			return;
+		}
+		zdrOn = next ?? !zdrOn;
+		await saveState();
+		registerProvider(); // re-register with new ZDR header (keeps existing models)
+		await ctx.modelRegistry.refresh({ providers: ["vantis"], force: true });
+		syncStatus(ctx, ctx.model);
+		ctx.ui.notify(
+			`Vantis ZDR ${zdrOn ? "ON" : "off"} — ${zdrOn ? "requests send X-ZDR: required; honored responses carry X-Vantis-ZDR: honored, calls fail if ZDR capacity unavailable" : "requests may use non-ZDR routes"}`,
+			zdrOn ? "warning" : "info",
+		);
+	};
+
+	pi.registerShortcut("ctrl+shift+z", {
+		description: "Toggle Vantis ZDR (when on a vantis model)",
+		handler: async (ctx) => {
+			await toggleZdr(ctx, undefined, true);
+		},
+	});
+
 	pi.registerCommand("vantis", {
 		description:
 			"Vantis cards: status / zdr [on|off] / refresh / models / balance / hide",
@@ -255,19 +283,8 @@ export default async function (pi: ExtensionAPI) {
 			switch (cmd) {
 				case "zdr": {
 					const next =
-						rest[0] === "on" ? true : rest[0] === "off" ? false : !zdrOn;
-					zdrOn = next;
-					await saveState();
-					registerProvider(); // re-register with new ZDR header (keeps existing models)
-					await ctx.modelRegistry.refresh({
-						providers: ["vantis"],
-						force: true,
-					});
-					syncStatus(ctx, ctx.model);
-					ctx.ui.notify(
-						`Vantis ZDR ${zdrOn ? "ON" : "off"} — ${zdrOn ? "requests send X-ZDR: required; honored responses carry X-Vantis-ZDR: honored, calls fail if ZDR capacity unavailable" : "requests may use non-ZDR routes"}`,
-						zdrOn ? "warning" : "info",
-					);
+						rest[0] === "on" ? true : rest[0] === "off" ? false : undefined;
+					await toggleZdr(ctx, next);
 					return;
 				}
 				case "refresh": {
@@ -285,14 +302,14 @@ export default async function (pi: ExtensionAPI) {
 					const models =
 						ctx.modelRegistry.getProvider("vantis")?.getModels() ?? [];
 					const lines = [
-						"Vantis models — ctx / max output / reasoning / family:",
+						"Vantis models — ctx / max out / reasoning / family / tier:",
 					];
 					for (const m of models) {
-						const family =
-							m.id === "deepseek-v4-flash" ? "open" : "frontier(allowlist)";
+						const family = m.reasoning ? "open" : "frontier(allowlist)";
+						const tier = m.id.endsWith("-fast") ? "fast" : "standard";
 						lines.push(
 							`${m.id}  ctx=${fmtTokens(m.contextWindow)}  out=${fmtTokens(m.maxTokens)}  ` +
-								`reasoning=${m.reasoning ? "on" : "off"}  ${family}`,
+								`reasoning=${m.reasoning ? "on" : "off"}  ${family}  tier=${tier}`,
 						);
 					}
 					if (models.length === 0) lines.push("(no models — /vantis refresh)");
