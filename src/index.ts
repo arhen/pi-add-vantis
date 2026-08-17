@@ -15,7 +15,9 @@
  *   /vantis           status summary (key, model count)
  *   /vantis zdr [on|off]   toggle Zero Data Retention (re-registers + refetches
  *                         catalog; sends `X-ZDR: required` on every request;
- *                         honored responses carry `X-Vantis-ZDR: honored`)
+ *   honored responses carry `X-Vantis-ZDR: honored`; footer status shows
+ *   `ZDR✓` once attested, plus the live billing tier from `X-Vantis-Tier`
+ *   (fast/standard) on chat responses)
  *   /vantis refresh   force-refetch model catalog
  *   /vantis models    list models with configs (widget below editor)
  *   /vantis balance   key lane balance + $VANTIS conversion
@@ -78,6 +80,8 @@ type MappedModel = ProviderModelConfig & {
 
 const stateFile = join(getAgentDir(), "vantis.json");
 let zdrOn = false;
+let zdrHonored = false; // set from X-Vantis-ZDR: honored on a live response (not persisted)
+let lastTier: string | undefined; // from X-Vantis-Tier on a live response (not persisted)
 let lastBalanceUsd = 0;
 let lastBalanceFetched = 0;
 
@@ -221,7 +225,13 @@ export default async function (pi: ExtensionAPI) {
 	};
 	registerProvider();
 
-	const statusText = () => (zdrOn ? "ZDR" : ""); // balance removed: redundant with pi's built-in session cost
+	const statusText = () => {
+		// balance removed: redundant with pi's built-in session cost
+		const parts: string[] = [];
+		if (zdrOn) parts.push(zdrHonored ? "ZDR✓" : "ZDR");
+		if (lastTier) parts.push(lastTier);
+		return parts.join(" · ");
+	};
 
 	// Footer status only while a vantis model is active.
 	const syncStatus = (ctx: { ui: { setStatus(k: string, v: string | undefined): void } }, model?: { provider?: string }) => {
@@ -236,6 +246,21 @@ export default async function (pi: ExtensionAPI) {
 
 	pi.on("model_select", (event, ctx) => {
 		syncStatus(ctx, event.model);
+	});
+
+	// Header detection: X-Vantis-Tier (fast/standard billing tier) and
+	// X-Vantis-ZDR: honored (ZDR attestation) on live chat responses.
+	pi.on("after_provider_response", (event, ctx) => {
+		if (ctx.model?.provider !== "vantis") return;
+		const get = (k: string) =>
+			Object.entries(event.headers).find(
+				([key]) => key.toLowerCase() === k,
+			)?.[1];
+		const tier = get("x-vantis-tier");
+		if (tier) lastTier = tier;
+		const zdr = get("x-vantis-zdr");
+		if (zdr) zdrHonored = zdr.toLowerCase() === "honored";
+		syncStatus(ctx, ctx.model);
 	});
 
 	type Ctx = {
@@ -258,6 +283,7 @@ export default async function (pi: ExtensionAPI) {
 			return;
 		}
 		zdrOn = next ?? !zdrOn;
+		zdrHonored = false; // pending until a live response attests X-Vantis-ZDR: honored
 		await saveState();
 		registerProvider(); // re-register with new ZDR header (keeps existing models)
 		await ctx.modelRegistry.refresh({ providers: ["vantis"], force: true });
